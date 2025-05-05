@@ -1,0 +1,52 @@
+import os
+grouphome = os.environ['GROUPHOME']
+ISOLATES = [i for i in open('/grp/valafar/data/depot/assembly/south_africa/isolates.txt').read().split('\n') if len(i) > 0]
+
+rule All:
+    input:
+        expand(grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_ccs_bystrand.bam", isolate = ISOLATES),
+        expand(grouphome + "/data/depot/assembly/south_africa/genomes/{isolate}.mmi", isolate = ISOLATES),
+        expand( grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_aligned_reads.bam", isolate = ISOLATES),
+        expand(grouphome + "/data/depot/assembly/south_africa/{isolate}/methylation/modifications.csv", isolate = ISOLATES)
+    threads: 45
+rule ccs_bystrand:
+    input:
+         grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}.bam"
+    output:
+        grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_ccs_bystrand.bam"
+    shell:
+        """ccs-kinetics-bystrandify {input} {output} """
+rule index:
+    input:
+        grouphome + "/data/depot/assembly/south_africa/genomes/{isolate}.fasta"
+    output:
+        grouphome + "/data/depot/assembly/south_africa/genomes/{isolate}.mmi"
+    shell:
+        """pbmm2 index {input} {output}"""
+rule align:
+    input:
+        input1 = grouphome + "/data/depot/assembly/south_africa/genomes/{isolate}.mmi",
+        input2 = grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_ccs_bystrand.bam"
+    output:
+        grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_aligned_reads.bam"
+    shell:
+        """pbmm2 align {input.input1} {input.input2} {output}"""
+rule index_align:
+    input:
+        grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_aligned_reads.bam"
+    output:
+        grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_aligned_reads.bam.pbi"
+    shell:
+        """pbindex {input}"""
+rule generate_methylation:
+    input:
+        input1 = grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_aligned_reads.bam",
+        input2 = grouphome + "/data/depot/assembly/south_africa/genomes/{isolate}.fasta",
+        input3 = grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_aligned_reads.bam.pbi",
+        input4 = grouphome + "/data/depot/assembly/south_africa/genomes/{isolate}.mmi",
+        input5 = grouphome + "/data/depot/assembly/south_africa/genomes/{isolate}.fasta.fai"
+    output:
+        grouphome + "/data/depot/assembly/south_africa/{isolate}/methylation/modifications.csv"
+    threads: 45
+    shell:
+        """ipdSummary {input.input1} --reference {input.input2} --csv {output}"""
