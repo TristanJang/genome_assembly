@@ -1,0 +1,15 @@
+import os
+grouphome = os.environ['GROUPHOME']
+ISOLATES = [i for i in open('/grp/valafar/data/depot/assembly/south_africa_broken_dnaA/alignments/self/isolates.txt').read().split('\n') if len(i) > 0]
+
+rule All:
+    input:
+        expand(grouphome + "/data/depot/assembly/south_africa_broken_dnaA/depth/{isolate}_depth.tsv", isolate = ISOLATES)
+
+rule samtools:
+    input:
+        grouphome + "/data/depot/assembly/south_africa_broken_dnaA/alignments/self/{isolate}_self_aligned.bam",
+    output:
+        grouphome + "/data/depot/assembly/south_africa_broken_dnaA/depth/{isolate}_depth.tsv"
+    shell:
+        """samtools depth {input} -o {output} --threads 8"""
