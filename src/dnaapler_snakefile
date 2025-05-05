@@ -1,0 +1,16 @@
+import os
+grouphome = os.environ['GROUPHOME']
+ISOLATES = [i for i in open('/grp/valafar/data/depot/assembly/south_africa/isolates_contaminant_free.txt').read().split('\n') if len(i) > 0]
+
+rule All:
+    input:
+        expand(grouphome + "/data/depot/assembly/south_africa/genomes_reoriented/{isolate}", isolate = ISOLATES)
+
+#initial read QC
+rule align:
+    input:
+        grouphome + "/data/depot/assembly/south_africa/genomes/{isolate}.fasta"
+    output:
+        directory(grouphome + "/data/depot/assembly/south_africa/genomes_reoriented/{isolate}")
+    shell:
+        """dnaapler all -i {input} -o {output} -p {wildcards.isolate} -t 16"""
