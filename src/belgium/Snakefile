@@ -1,0 +1,73 @@
+import os
+grouphome = os.environ['GROUPHOME']
+ISOLATES = [i for i in open('/grp/valafar/data/depot/assembly/belgium/isolates2.txt').read().split('\n') if len(i) > 0]
+
+rule All:
+    input:
+        #expand(grouphome + "/data/depot/assembly/belgium/fastq/{isolate}_filtered_reads.fastq",isolate=ISOLATES),
+        #expand(grouphome + "/data/depot/assembly/belgium/{isolate}/assembly/assembly.fasta",isolate=ISOLATES),
+        expand(grouphome + "/data/depot/assembly/belgium/{isolate}/circ/{isolate}.fasta",isolate=ISOLATES)
+        #expand(grouphome + "/data/depot/assembly/belgium/{isolate}/annotation/06.fixstart.gbk",isolate=ISOLATES)
+        #expand(grouphome + "/data/depot/assembly/belgium/{isolate}/{isolate}_report.html", isolate=ISOLATES)
+#rule fastqc:
+    #input:
+        #grouphome + "/data/depot/assembly/belgium/{isolate}/{isolate}_filtered_reads.fastq"
+    #output:
+        #grouphome + "/data/depot/assembly/belgium/{isolate}/{isolate}_report.html"
+    #shell:
+        #"""fastp {input} -h {output}"""
+
+
+#initial read QC
+#rule filter_reads:
+    #input:
+        #grouphome + "/data/depot/assembly/belgium/fastq/{isolate}.fastq"
+    #output:
+        #grouphome + "/data/depot/assembly/belgium/fastq/{isolate}_filtered_reads.fastq"
+    #shell:
+        #"""filtlong --min_length 1000 --keep_percent 95 {input} > {output}"""
+
+#step for contamination detection and filtration
+#rule flye_pacbio:
+    #input:
+        #grouphome + "/data/depot/assembly/belgium/fastq/{isolate}_filtered_reads.fastq"
+    #output:
+        #output1=directory(grouphome + "/data/depot/assembly/belgium/{isolate}/assembly/"),
+        #output2=grouphome + "/data/depot/assembly/belgium/{isolate}/assembly/assembly.fasta"
+    #shell:
+        #"""flye --pacbio-hifi {input} --out-dir {output.output1} --threads 8 """
+
+#rule circlator:
+    #input:
+        #input1 = grouphome + "/data/depot/assembly/belgium/{isolate}/assembly/assembly.fasta",
+        #input2 = grouphome + "/data/depot/assembly/belgium/fastq/{isolate}_filtered_reads.fastq",
+        #input3 = grouphome + "/resources/dnaA.fasta"
+    #output:
+        #output1 = directory(grouphome + "/data/depot/assembly/belgium/{isolate}/circ"),
+        #output2 = grouphome + "/data/depot/assembly/belgium/{isolate}/circ/{isolate}.fasta"
+    #shell:
+        #"""circlator fixstart {input.input1} {output.output2} --genes_fa {input.input3} """
+
+rule circlator:
+    input:
+        input1 = grouphome + "/data/depot/assembly/belgium/{isolate}/assembly/assembly.fasta",
+        input2 = grouphome + "/data/depot/assembly/belgium/fastq/{isolate}_filtered_reads.fastq",
+        input3 = grouphome + "/resources/dnaA.fasta"
+    output:
+        output1= directory(grouphome + "/data/depot/assembly/belgium/{isolate}/circ"),
+        output2 = grouphome + "/data/depot/assembly/belgium/{isolate}/circ/06.fixstart.fasta"
+    shell:
+        """circlator all --assembler spades --verbose {input.input1} {input.input2} {output.output1} --genes_fa {input.input3} """
+
+##annotation of assembly using hybran
+#rule annotate_assembly:
+    #input:
+        #input1=grouphome + "/data/depot/assembly/belgium/{isolate}/assembly/circ/06.fixstart.fasta",
+        #input2=grouphome + "/resources/H37Rv.gbk"
+    #output:
+        #output1=directory(grouphome + "/data/depot/assembly/belgium/{isolate}/annotation/"),
+        #output2=grouphome + "/data/depot/assembly/belgium/{isolate}/annotation/06.fixstart.gbk"
+    #conda:
+        #"hybran"
+    #shell:
+        #"""hybran --genomes {input.input1} --references {input.input2} --output {output.output1} --nproc 8 --ratt-transfer-type Species"""
