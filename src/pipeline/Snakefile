@@ -1,0 +1,110 @@
+#requirements to run:
+#takes basecalled files, in fastq format as input
+#conda activate assembly, with txt file for each isolate to assemble
+#note: paths may need to be changed for different runs, also number of cores may need to changed (currently 24)
+import os
+grouphome = os.environ['GROUPHOME']
+ISOLATES = [i for i in open('/grp/valafar/data/depot/assembly/south_africa/isolates.txt').read().split('\n') if len(i) > 0]
+
+rule All:
+    input:
+        expand(grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_filtered_reads.fastq", isolate = ISOLATES),
+        expand( grouphome + "/data/depot/assembly/south_africa/{isolate}/class_report.kraken", isolate = ISOLATES),
+        expand(grouphome + "/data/depot/assembly/south_africa/{isolate}/classification.kraken", isolate = ISOLATES),
+        expand(grouphome + "/data/depot/assembly/south_africa/{isolate}/classified_reads.fastq", isolate = ISOLATES),
+        expand(grouphome + "/data/depot/assembly/south_africa/{isolate}/assembly/assembly.fasta", isolate = ISOLATES),
+        expand(grouphome+ "/data/depot/assembly/south_africa/{isolate}/assembly/circ/06.fixstart.fasta",isolate = ISOLATES),
+        expand(grouphome+ "/data/depot/assembly/south_africa/{isolate}/annotation/06.fixstart.gbk", isolate = ISOLATES)
+        # expand(grouphome + "/data/depot/assembly/{isolate}/{isolate}_assembly_report.txt", isolate = ISOLATES)
+
+#initial read QC
+rule filter_reads:
+    input:
+        grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}.fastq"
+    output:
+        grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_filtered_reads.fastq"
+    shell:
+        """filtlong --min_length 1000 --keep_percent 95 {input} > {output}"""
+#step for contamination detection and filtration
+rule run_kraken:
+    input:
+        grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_filtered_reads.fastq"
+    output:
+        output1 = grouphome + "/data/depot/assembly/south_africa/{isolate}/class_report.kraken",
+        output2 = grouphome + "/data/depot/assembly/south_africa/{isolate}/classification.kraken"
+    shell:
+        """/grp/valafar/data/depot/nanopore_assembly/maryam/tools/kraken2/kraken_unzipped/kraken2 --db /grp/valafar/data/depot/nanopore_assembly/contamination_db/ {input} --use-names --report {output.output1} > {output.output2}"""
+rule classify_kraken_reads:
+    input:
+        input1 = grouphome + "/data/depot/assembly/south_africa/{isolate}/class_report.kraken",
+        input2 = grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_filtered_reads.fastq",
+	input3 = grouphome + "/data/depot/assembly/south_africa/{isolate}/classification.kraken" 
+    output:
+        grouphome + "/data/depot/assembly/south_africa/{isolate}/classified_reads.fastq"
+    shell:
+        """extract_kraken_reads.py -k {input.input3} -s {input.input2} -o {output} -t 1773 --include-children --fastq-output -r {input.input1}"""
+#assembly of genome using flye (or metaflye depending on kraken results)
+if config["sequencer"] == "nanopore":
+    rule flye_nanopore:
+        input:
+            grouphome + "/data/depot/assembly/south_africa/{isolate}/classified_reads.fastq"
+        output:
+            output1 = grouphome + "/data/depot/assembly/south_africa/{isolate}/assembly/",
+            output2 = grouphome + "/data/depot/assembly/south_africa/{isolate}/assembly/assembly.fasta"
+        shell:
+                """/grp/valafar/data/nanopore_assembly/maryam/tools/Flye/bin/flye --nano-hq {input} --out-dir {output.output1} --threads 20"""
+    # rule polishing:
+    #     input:
+    #         input1 = grouphome + "/data/depot/depot/nanopore_assembly/pipeline_trial/{isolate}/assembly/assembly.fasta",
+    #         input2 = grouphome + "/data/depot/depot/nanopore_assembly/pipeline_trial/{isolate}/{isolate}_filtered_reads.fastq"
+    #     output:
+    #         grouphome + "/data/depot/depot/nanopore_assembly/pipeline_trial/{isolate}/assembly/final_assembly.fasta"
+    #     singularity:
+    #        "docker://ontresearch/medaka"
+    #     shell:
+    #         #will need to update -m flag for right model of MinION
+    #         """medaka_consensus -i {input.input2} -d {input.input1} -o {output} -m r941_min_fast_g303 """
+else:
+    rule flye_pacbio:
+        input:
+            grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_filtered_reads.fastq"
+        output:
+            output1 = directory(grouphome + "/data/depot/assembly/south_africa/{isolate}/assembly/"),
+            output2 = grouphome + "/data/depot/assembly/south_africa/{isolate}/assembly/assembly.fasta"
+        shell:
+            """/grp/valafar/data/depot/nanopore_assembly/maryam/tools/Flye/bin/flye --pacbio-hifi {input} --out-dir {output.output1} --threads 20 """
+rule circlator:
+    input:
+        input1=
+            grouphome + "/data/depot/assembly/south_africa/{isolate}/assembly/assembly.fasta",
+        input2=
+            grouphome + "/data/depot/assembly/south_africa/{isolate}/{isolate}_filtered_reads.fastq",
+        input3=
+            grouphome+ "/resources/dnaA.fasta"
+    output:
+        output1 =
+            directory(grouphome + "/data/depot/assembly/south_africa/{isolate}/assembly/circ"),
+        output2 =
+            grouphome + "/data/depot/assembly/south_africa/{isolate}/assembly/circ/06.fixstart.fasta"
+    shell:
+        """rm -rf {output.output1} && circlator all --assembler spades --verbose {input.input1} {input.input2} {output.output1} --genes_fa {input.input3} """
+
+##annotation of assembly using hybran
+rule annotate_assembly:
+    input:
+        input1 = grouphome + "/data/depot/assembly/south_africa/{isolate}/assembly/circ/06.fixstart.fasta",
+        input2 = grouphome + "/resources/H37Rv.gbk"
+    output:
+        output1=directory(grouphome+ "/data/depot/assembly/south_africa/{isolate}/annotation/"),
+        output2= grouphome+ "/data/depot/assembly/south_africa/{isolate}/annotation/06.fixstart.gbk"
+    shell:
+        """hybran --genomes {input.input1} --references {input.input2} --output {output.output1} --nproc 30 --ratt-transfer-type Species"""
+
+# #qc of assembly (check for trna's and core genes)
+# rule QC:
+#     input:
+#         "/grp/valafar/data/depot/data/depot/depot/assembly/{isolate}/{isolate}_final.fasta"
+#     output:
+#         "/grp/valafar/data/depot/data/depot/depot/assembly/{isolate}/{isolate}_assembly_report.txt"
+#     shell:
+#         """python ..."""
